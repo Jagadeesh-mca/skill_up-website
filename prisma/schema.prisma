@@ -1,0 +1,566 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// 1. ENUMS
+// ==========================================
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum QuestionType {
+  MCQ
+  COMPILER
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum QuestionStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum DuplicateType {
+  EXACT
+  FORMAT
+  REORDERED
+  SEMANTIC
+}
+
+enum DuplicateResolution {
+  PENDING
+  KEPT_BOTH
+  MERGED
+  REJECTED
+}
+
+enum AssessmentMode {
+  FIXED
+  PRACTICE
+}
+
+enum AssessmentStatus {
+  DRAFT
+  APPROVED
+  PUBLISHED
+  CLOSED
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  TIMEOUT_SUBMITTED
+  ABANDONED
+}
+
+enum QuestionResult {
+  CORRECT
+  INCORRECT
+  SKIPPED
+}
+
+enum ImportStatus {
+  UPLOADING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// ==========================================
+// 2. USERS & PROFILES
+// ==========================================
+
+model User {
+  id            String      @id @default(uuid())
+  email         String      @unique
+  name          String
+  passwordHash  String?
+  role          Role        @default(STUDENT)
+  status        UserStatus  @default(ACTIVE)
+  image         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  studentProfile     StudentProfile?
+  teacherProfile     TeacherProfile?
+  
+  createdQuestions   Question[]        @relation("CreatedBy")
+  reviewedQuestions  Question[]       @relation("ReviewedBy")
+  resolvedDuplicates DuplicateFlag[]   @relation("ResolvedBy")
+  auditLogs          AuditLog[]
+  attempts           Attempt[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model StudentProfile {
+  id           String      @id @default(uuid())
+  userId       String      @unique
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  programId    String?
+  program      Program?    @relation(fields: [programId], references: [id])
+  batchId      String?
+  batch        Batch?      @relation(fields: [batchId], references: [id])
+  registerNo   String?     @unique
+  rollNo       String?
+
+  questionHistory StudentQuestionHistory[]
+  topicStats      StudentTopicStats[]
+  assignments     AssessmentAssignment[]
+}
+
+model TeacherProfile {
+  id           String      @id @default(uuid())
+  userId       String      @unique
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  designation  String?
+}
+
+// ==========================================
+// 3. ACADEMIC & COMPANY MASTER DATA
+// ==========================================
+
+model Department {
+  id        String           @id @default(uuid())
+  code      String           @unique
+  name      String
+  programs  Program[]
+  students  StudentProfile[]
+  teachers  TeacherProfile[]
+}
+
+model Program {
+  id           String           @id @default(uuid())
+  name         String
+  departmentId String
+  department   Department       @relation(fields: [departmentId], references: [id])
+  batches      Batch[]
+  students     StudentProfile[]
+}
+
+model Batch {
+  id          String                 @id @default(uuid())
+  name        String
+  year        Int
+  programId   String
+  program     Program                @relation(fields: [programId], references: [id])
+  students    StudentProfile[]
+  assignments AssessmentAssignment[]
+}
+
+model Company {
+  id          String                @id @default(uuid())
+  name        String                @unique
+  slug        String                @unique
+  description String?
+  questions   QuestionCompanyMap[]
+  templates   AssessmentTemplate[]
+
+  @@index([name])
+}
+
+model Subject {
+  id          String               @id @default(uuid())
+  code        String               @unique
+  name        String
+  topics      Topic[]
+  templates   AssessmentTemplate[]
+}
+
+model Topic {
+  id          String               @id @default(uuid())
+  name        String
+  subjectId   String
+  subject     Subject              @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subtopics   Subtopic[]
+  questions   QuestionTopicMap[]
+  stats       StudentTopicStats[]
+
+  @@unique([name, subjectId])
+  @@index([subjectId])
+}
+
+model Subtopic {
+  id        String    @id @default(uuid())
+  name      String
+  topicId   String
+  topic     Topic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([name, topicId])
+}
+
+// ==========================================
+// 4. QUESTIONS & OPTIONS
+// ==========================================
+
+model Question {
+  id             String          @id @default(uuid())
+  text           String          @db.Text
+  type           QuestionType    @default(MCQ)
+  difficulty     Difficulty      @default(MEDIUM)
+  marks          Float           @default(1.0)
+  negativeMarks  Float           @default(0.0)
+  source         String?
+  status         QuestionStatus  @default(PENDING_REVIEW)
+  explanation    String?         @db.Text
+  normalizedHash String
+  embedding      Float[]         // Vector array for similarity checks
+
+  // Compiler/Coding specific attributes
+  sampleInput    String?         @db.Text
+  sampleOutput   String?         @db.Text
+  hiddenTestCases Json?
+
+  createdById    String?
+  createdBy      User?           @relation("CreatedBy", fields: [createdById], references: [id])
+  reviewedById   String?
+  reviewedBy     User?           @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt     DateTime?
+
+  options        QuestionOption[]
+  companies      QuestionCompanyMap[]
+  topics         QuestionTopicMap[]
+  
+  duplicateFlagsAsA DuplicateFlag[] @relation("QuestionA")
+  duplicateFlagsAsB DuplicateFlag[] @relation("QuestionB")
+  
+  assessmentQuestions AssessmentQuestion[]
+  attemptAnswers      AttemptAnswer[]
+  studentHistory      StudentQuestionHistory[]
+  importRows          ImportRow[]
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([status])
+  @@index([difficulty])
+  @@index([normalizedHash])
+}
+
+model QuestionOption {
+  id         String   @id @default(uuid())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String   @db.Text
+  isCorrect  Boolean  @default(false)
+  position   Int
+
+  attemptAnswers AttemptAnswer[]
+
+  @@index([questionId])
+}
+
+model QuestionCompanyMap {
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@id([questionId, companyId])
+}
+
+model QuestionTopicMap {
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  topicId    String
+  topic      Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([questionId, topicId])
+}
+
+// ==========================================
+// 5. IMPORT BATCHES & DUPLICATE DETECTION
+// ==========================================
+
+model ImportBatch {
+  id             String       @id @default(uuid())
+  originalName   String
+  storedFilePath String
+  mimeType       String
+  totalRows      Int          @default(0)
+  validRows      Int          @default(0)
+  invalidRows    Int          @default(0)
+  status         ImportStatus @default(UPLOADING)
+  uploadedById   String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  rows           ImportRow[]
+}
+
+model ImportRow {
+  id           String      @id @default(uuid())
+  batchId      String
+  batch        ImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rowNumber    Int
+  rawData      Json
+  isValid      Boolean     @default(true)
+  errors       Json?
+  questionId   String?
+  question     Question?   @relation(fields: [questionId], references: [id], onDelete: SetNull)
+
+  @@index([batchId])
+}
+
+model DuplicateFlag {
+  id              String              @id @default(uuid())
+  questionAId     String
+  questionA       Question            @relation("QuestionA", fields: [questionAId], references: [id], onDelete: Cascade)
+  questionBId     String
+  questionB       Question            @relation("QuestionB", fields: [questionBId], references: [id], onDelete: Cascade)
+  type            DuplicateType
+  similarityScore Float
+  resolution      DuplicateResolution @default(PENDING)
+  resolvedById    String?
+  resolvedBy      User?               @relation("ResolvedBy", fields: [resolvedById], references: [id])
+  resolvedAt      DateTime?
+  createdAt       DateTime            @default(now())
+
+  @@unique([questionAId, questionBId, type])
+  @@index([resolution])
+}
+
+// ==========================================
+// 6. ASSESSMENTS & ASSIGNMENTS
+// ==========================================
+
+model AssessmentTemplate {
+  id                  String         @id @default(uuid())
+  title               String
+  description         String?
+  companyId           String?
+  company             Company?       @relation(fields: [companyId], references: [id])
+  subjectId           String?
+  subject             Subject?       @relation(fields: [subjectId], references: [id])
+  topicIds            String[]
+  difficultyMix       Json
+  questionCount       Int
+  durationMinutes     Int
+  totalMarks          Float
+  negativeMarkingRate Float          @default(0.0)
+  passMark            Float          @default(40.0)
+  mode                AssessmentMode @default(FIXED)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  assessments         Assessment[]
+}
+
+model Assessment {
+  id                  String               @id @default(uuid())
+  templateId          String?
+  template            AssessmentTemplate?  @relation(fields: [templateId], references: [id])
+  title               String
+  code                String               @unique
+  status              AssessmentStatus     @default(DRAFT)
+  mode                AssessmentMode       @default(FIXED)
+  windowStart         DateTime?
+  windowEnd           DateTime?
+  durationMinutes     Int                  @default(60)
+  totalMarks          Float                @default(100)
+  passMark            Float                @default(40)
+  negativeMarkingRate Float                @default(0.0)
+  randomizeQuestions  Boolean              @default(true)
+  randomizeOptions    Boolean              @default(true)
+  createdById         String
+
+  questions           AssessmentQuestion[]
+  assignments         AssessmentAssignment[]
+  attempts            Attempt[]
+
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  @@index([status])
+  @@index([code])
+}
+
+model AssessmentQuestion {
+  id            String     @id @default(uuid())
+  assessmentId  String
+  assessment    Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  questionId    String
+  question      Question   @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  orderIndex    Int
+  marks         Float      @default(1.0)
+  negativeMarks Float      @default(0.0)
+
+  @@unique([assessmentId, questionId])
+  @@index([assessmentId])
+}
+
+model AssessmentAssignment {
+  id           String          @id @default(uuid())
+  assessmentId String
+  assessment   Assessment      @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  studentId    String?
+  student      StudentProfile? @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  batchId      String?
+  batch        Batch?          @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  assignedAt   DateTime        @default(now())
+
+  @@index([assessmentId])
+  @@index([studentId])
+  @@index([batchId])
+}
+
+// ==========================================
+// 7. ATTEMPTS & EVALUATION
+// ==========================================
+
+model Attempt {
+  id           String        @id @default(uuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assessmentId String
+  assessment   Assessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  startedAt    DateTime      @default(now())
+  expiresAt    DateTime
+  submittedAt  DateTime?
+  status       AttemptStatus @default(IN_PROGRESS)
+  
+  score        Float         @default(0.0)
+  totalMarks   Float         @default(0.0)
+  percentage   Float         @default(0.0)
+  passed       Boolean       @default(false)
+  grade        String?
+  accuracy     Float         @default(0.0)
+
+  answers      AttemptAnswer[]
+
+  @@index([userId])
+  @@index([assessmentId])
+  @@index([status])
+}
+
+model AttemptAnswer {
+  id               String          @id @default(uuid())
+  attemptId        String
+  attempt          Attempt         @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId       String
+  question         Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedOptionId String?
+  selectedOption   QuestionOption? @relation(fields: [selectedOptionId], references: [id])
+  codeSubmitted    String?         @db.Text
+  isCorrect        Boolean         @default(false)
+  marksAwarded     Float           @default(0.0)
+  timeSpentSeconds Int             @default(0)
+  isFlagged        Boolean         @default(false)
+  isSkipped        Boolean         @default(false)
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+}
+
+// ==========================================
+// 8. STUDENT TRACKING & WEAK-AREA ANALYTICS
+// ==========================================
+
+model StudentQuestionHistory {
+  id          String         @id @default(uuid())
+  studentId   String
+  student     StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  questionId  String
+  question    Question       @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  firstSeenAt DateTime       @default(now())
+  lastSeenAt  DateTime       @default(now())
+  timesSeen   Int            @default(1)
+  lastResult  QuestionResult @default(SKIPPED)
+
+  @@unique([studentId, questionId])
+  @@index([studentId])
+}
+
+model StudentTopicStats {
+  id                  String         @id @default(uuid())
+  studentId           String
+  student             StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  topicId             String
+  topic               Topic          @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  totalAttempted      Int            @default(0)
+  totalCorrect        Int            @default(0)
+  accuracyPercentage  Float          @default(0.0)
+  avgTimeSpentSeconds Float          @default(0.0)
+  lastAttemptedAt     DateTime       @default(now())
+
+  @@unique([studentId, topicId])
+  @@index([studentId])
+}
+
+// ==========================================
+// 9. AUDIT LOGS, JOB QUEUE & SYSTEM SETTINGS
+// ==========================================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model JobQueue {
+  id          String    @id @default(uuid())
+  type        String
+  payload     Json
+  status      JobStatus @default(PENDING)
+  retries     Int       @default(0)
+  error       String?   @db.Text
+  scheduledAt DateTime  @default(now())
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+model SystemSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String   @db.Text
+  description String?
+  updatedAt   DateTime @updatedAt
+}

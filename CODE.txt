@@ -1,0 +1,903 @@
+// ==========================================
+// 1. MAIN HTTP GET ROUTE
+// ==========================================
+function doGet() {
+  var template = HtmlService.createTemplateFromFile('Index');
+  return template.evaluate()
+    .setTitle('Skill Up Assessment System')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// ==========================================
+// 2. HELPER FUNCTIONS & ROBUST DATE PARSER
+// ==========================================
+function getOrCreateSheet(sheetName) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+  }
+  return sheet;
+}
+
+function parseCustomDate(rawVal) {
+  if (!rawVal) return null;
+  if (rawVal instanceof Date) {
+    return !isNaN(rawVal.getTime()) ? rawVal : null;
+  }
+  
+  var str = String(rawVal).trim();
+  if (!str) return null;
+
+  var isoStr = str.replace(" ", "T");
+  var parsed = new Date(isoStr);
+  if (!isNaN(parsed.getTime())) return parsed;
+
+  var parts = str.split(/[\sT:-]/);
+  if (parts.length >= 3) {
+    var year = parseInt(parts[0], 10);
+    var month = parseInt(parts[1], 10) - 1;
+    var day = parseInt(parts[2], 10);
+    var hours = parts.length > 3 ? parseInt(parts[3], 10) : 0;
+    var minutes = parts.length > 4 ? parseInt(parts[4], 10) : 0;
+    var seconds = parts.length > 5 ? parseInt(parts[5], 10) : 0;
+
+    var manualDate = new Date(year, month, day, hours, minutes, seconds);
+    if (!isNaN(manualDate.getTime())) return manualDate;
+  }
+
+  var fallback = new Date(str);
+  return !isNaN(fallback.getTime()) ? fallback : null;
+}
+
+function getLatestBatchFromSheet(sheetName) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return null;
+
+  var data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return null;
+
+  for (var i = data.length - 1; i >= 1; i--) {
+    var row = data[i];
+    var timestampStr = String(row[8] || "").trim(); // Column I: Upload Timestamp
+    if (timestampStr !== "") {
+      var parsedDate = parseCustomDate(row[8]);
+      return {
+        sheetName: sheetName,
+        timestampStr: timestampStr,
+        parsedDate: parsedDate ? parsedDate : new Date(0),
+        lastRowIndex: i
+      };
+    }
+  }
+  return null;
+}
+
+// ==========================================
+// 3. GROQ CORE API RUNNER
+// ==========================================
+function callGroqAPI(messages, jsonMode) {
+  var apiKey = PropertiesService.getScriptProperties().getProperty("GROQ_API_KEY");
+  if (!apiKey) {
+    throw new Error("GROQ_API_KEY is not configured in Script Properties.");
+  }
+
+  var payload = {
+    model: "llama-3.3-70b-versatile",
+    messages: messages,
+    temperature: 0.3,
+    max_tokens: 2048
+  };
+
+  if (jsonMode) {
+    payload.response_format = { type: "json_object" };
+  }
+
+  var options = {
+    method: "post",
+    contentType: "application/json",
+    headers: { "Authorization": "Bearer " + apiKey },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  var response = UrlFetchApp.fetch("https://api.groq.com/openai/v1/chat/completions", options);
+  var resCode = response.getResponseCode();
+  var resText = response.getContentText();
+
+  if (resCode !== 200) {
+    throw new Error("Groq API Error (" + resCode + "): " + resText);
+  }
+
+  var json = JSON.parse(resText);
+  return json.choices[0].message.content;
+}
+
+// ==========================================
+// 4. USER AUTHENTICATION & ATTEMPT CHECK
+// ==========================================
+function verifyUserRole(selectedRole) {
+  try {
+    var activeUserEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail();
+    var targetRole = String(selectedRole || "Student").trim().toLowerCase();
+
+    if (!activeUserEmail || activeUserEmail.trim() === "") {
+      activeUserEmail = (targetRole === "faculty") ? "faculty@hindustanuniv.ac.in" : "student@student.hindustanuniv.ac.in";
+    }
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = getOrCreateSheet("Users");
+    var data = sheet.getDataRange().getValues();
+    var detectedEmail = activeUserEmail.trim().toLowerCase();
+    
+    var userFound = false;
+    var matchedRowRole = "";
+    var userName = targetRole.charAt(0).toUpperCase() + targetRole.slice(1) + " User";
+    var isDualRole = false;
+
+    if (data.length > 1) {
+      for (var i = 1; i < data.length; i++) {
+        var row = data[i];
+        if (!row || row.length === 0) continue;
+
+        var sheetEmail = "";
+        var rawRole = "";
+        var sheetName = "";
+
+        if (row.length >= 3) {
+          sheetName = String(row[0] || "").trim();
+          sheetEmail = String(row[1] || "").trim().toLowerCase();
+          rawRole = String(row[2] || "").trim().toLowerCase();
+        } else if (row.length === 2) {
+          sheetEmail = String(row[0] || "").trim().toLowerCase();
+          rawRole = String(row[1] || "").trim().toLowerCase();
+        }
+
+        if (sheetEmail === detectedEmail) {
+          userFound = true;
+          matchedRowRole = rawRole;
+          if (sheetName) userName = sheetName;
+          isDualRole = (rawRole.indexOf("faculty") !== -1 && rawRole.indexOf("student") !== -1) || rawRole === "admin" || rawRole === "all";
+          break;
+        }
+      }
+    }
+
+    if (userFound) {
+      var hasPermission = matchedRowRole === targetRole || 
+                          matchedRowRole.indexOf(targetRole) !== -1 || 
+                          matchedRowRole === "admin" || 
+                          matchedRowRole === "all";
+
+      if (!hasPermission) {
+        return {
+          success: false,
+          message: "Access Denied: Your account (" + activeUserEmail + ") is registered as '" + matchedRowRole.toUpperCase() + "' and cannot access the " + selectedRole + " portal.",
+          name: userName,
+          email: activeUserEmail,
+          role: selectedRole,
+          isDualRole: isDualRole,
+          hasAttempted: false
+        };
+      }
+    } else {
+      var isFacultyDomain = detectedEmail.endsWith("@hindustanuniv.ac.in") && !detectedEmail.endsWith("@student.hindustanuniv.ac.in");
+      var isStudentDomain = detectedEmail.endsWith("@student.hindustanuniv.ac.in");
+
+      if (targetRole === "student" && isFacultyDomain && !isDualRole) {
+        return {
+          success: false,
+          message: "Access Denied: Faculty members cannot log in to the Student Portal.",
+          name: userName,
+          email: activeUserEmail,
+          role: selectedRole,
+          isDualRole: false,
+          hasAttempted: false
+        };
+      }
+
+      if (targetRole === "faculty" && isStudentDomain && !isDualRole) {
+        return {
+          success: false,
+          message: "Access Denied: Students cannot log in to the Faculty Portal.",
+          name: userName,
+          email: activeUserEmail,
+          role: selectedRole,
+          isDualRole: false,
+          hasAttempted: false
+        };
+      }
+
+      if (activeUserEmail.indexOf("@") !== -1) {
+        var parts = activeUserEmail.split("@")[0];
+        userName = parts.charAt(0).toUpperCase() + parts.slice(1);
+      }
+    }
+
+    var hasAttempted = false;
+    if (targetRole === "student") {
+      var rSheet = getOrCreateSheet("Responses");
+      var aptitudeBatch = getLatestBatchFromSheet("Questions - Aptitude");
+      var codingBatch = getLatestBatchFromSheet("Questions - Coding");
+      
+      var activeLabel = "aptitude";
+      if (codingBatch && (!aptitudeBatch || codingBatch.parsedDate > aptitudeBatch.parsedDate)) {
+        activeLabel = "coding";
+      }
+
+      if (rSheet.getLastRow() > 1) {
+        var rData = rSheet.getDataRange().getValues();
+        for (var j = 1; j < rData.length; j++) {
+          var studentEmail = String(rData[j][1] || "").trim().toLowerCase();
+          var testTaken = String(rData[j][4] || "").trim().toLowerCase();
+
+          if (studentEmail === detectedEmail && testTaken === activeLabel) {
+            hasAttempted = true;
+            break;
+          }
+        }
+      }
+    }
+
+    return { 
+      success: true, 
+      name: userName,
+      email: activeUserEmail, 
+      role: selectedRole,
+      isDualRole: isDualRole,
+      hasAttempted: hasAttempted
+    };
+  } catch (err) {
+    var fallbackEmail = (selectedRole || "").toLowerCase() === "faculty" 
+      ? "faculty@hindustanuniv.ac.in" 
+      : "student@student.hindustanuniv.ac.in";
+
+    return {
+      success: false,
+      message: "Authentication Error: " + err.toString(),
+      name: selectedRole + " User",
+      email: fallbackEmail,
+      role: selectedRole,
+      isDualRole: false,
+      hasAttempted: false
+    };
+  }
+}
+
+// ==========================================
+// 5. FETCH QUESTIONS WITH DATE & TIME VALIDATION
+// ==========================================
+function getQuestionsData() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    var aptitudeBatch = getLatestBatchFromSheet("Questions - Aptitude");
+    var codingBatch = getLatestBatchFromSheet("Questions - Coding");
+
+    var targetSheetName = "Questions - Aptitude";
+    if (aptitudeBatch && codingBatch) {
+      targetSheetName = (codingBatch.parsedDate >= aptitudeBatch.parsedDate) ? "Questions - Coding" : "Questions - Aptitude";
+    } else if (codingBatch) {
+      targetSheetName = "Questions - Coding";
+    } else if (aptitudeBatch) {
+      targetSheetName = "Questions - Aptitude";
+    }
+
+    var sheet = ss.getSheetByName(targetSheetName); 
+    if (!sheet) return { success: false, message: "No active question sheet found." };
+
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      return { success: false, message: "No questions available in '" + targetSheetName + "'." };
+    }
+
+    var latestTimestamp = "";
+    for (var i = data.length - 1; i >= 1; i--) {
+      var rowTimestamp = String(data[i][8] || "").trim();
+      if (rowTimestamp !== "") {
+        latestTimestamp = rowTimestamp;
+        break;
+      }
+    }
+
+    if (!latestTimestamp) {
+      return { success: false, message: "No active uploaded question batch found." };
+    }
+
+    var now = new Date();
+    var validQuestions = [];
+    var isCoding = targetSheetName.indexOf("Coding") !== -1;
+    var timeoutMins = 60;
+
+    for (var k = 1; k < data.length; k++) {
+      var checkRow = data[k];
+      if (String(checkRow[8] || "").trim() === latestTimestamp) {
+        var displayStartRaw = checkRow[9];
+        var displayUntilRaw = checkRow[10];
+        var rowTimeout = Number(checkRow[11]);
+
+        if (!isNaN(rowTimeout) && rowTimeout > 0) {
+          timeoutMins = rowTimeout;
+        }
+
+        var startDate = parseCustomDate(displayStartRaw);
+        if (startDate && now < startDate) {
+          return {
+            success: false,
+            message: "Assessment Scheduled: Opening on " + startDate.toLocaleString() + ". Access is currently unavailable."
+          };
+        }
+
+        var displayUntilDate = parseCustomDate(displayUntilRaw);
+        if (displayUntilDate && now > displayUntilDate) {
+          return {
+            success: false,
+            message: "Assessment Expired: Closed on " + displayUntilDate.toLocaleString() + "."
+          };
+        }
+        break;
+      }
+    }
+
+    for (var j = 1; j < data.length; j++) {
+      var row = data[j];
+      if (!row[0] || String(row[0]).trim() === "") continue;
+
+      var rowUploadTimestamp = String(row[8] || "").trim();
+
+      if (rowUploadTimestamp === latestTimestamp) {
+        var rawQType = String(row[12] || "").trim().toUpperCase();
+        var questionType = (rawQType === "COMPILER" || (!row[1] && !row[2])) ? "COMPILER" : "MCQ";
+
+        validQuestions.push({
+          id: "Q" + j,
+          question: String(row[0]).trim(),
+          type: questionType,
+          options: [
+            String(row[1] || "").trim(),
+            String(row[2] || "").trim(),
+            String(row[3] || "").trim(),
+            String(row[4] || "").trim()
+          ],
+          sampleInput: String(row[1] || "").trim(),
+          sampleOutput: String(row[2] || "").trim()
+        });
+      }
+    }
+
+    if (validQuestions.length === 0) {
+      return { success: false, message: "No questions found in the active assessment batch." };
+    }
+
+    return {
+      success: true,
+      activeSheet: targetSheetName,
+      isCoding: isCoding,
+      testLabel: isCoding ? "Coding Assessment" : "Aptitude Assessment",
+      timeoutMins: timeoutMins,
+      questions: validQuestions
+    };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
+}
+
+// ==========================================
+// 6. FACULTY MANUAL & AGENT BATCH UPLOAD
+// ==========================================
+function uploadQuestionsBatch(type, questionsArray, displayStart, displayUntil, timeoutMins) {
+  try {
+    var sheetName = (type === 'Coding') ? 'Questions - Coding' : 'Questions - Aptitude';
+    var sheet = getOrCreateSheet(sheetName);
+
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow([
+        "Question", "Option A / Sample Input", "Option B / Sample Output", "Option C", "Option D", 
+        "Correct Answer / Hidden TCs", "Marks", "Uploaded By", "Timestamp", 
+        "Display Start", "Display Until", "Timeout Mins", "Question Type", "Hidden Test Cases"
+      ]);
+    }
+
+    var uploadTimestamp = new Date().toLocaleString();
+
+    var rowsToAppend = questionsArray.map(function(q) {
+      return [
+        q.question,
+        q.optionA || q.sampleInput || '',
+        q.optionB || q.sampleOutput || '',
+        q.optionC || '',
+        q.optionD || '',
+        q.answer || '',
+        q.marks || 1,
+        q.uploadedBy || 'Faculty User',
+        uploadTimestamp,
+        displayStart || '',
+        displayUntil || '',
+        timeoutMins || 60,
+        q.type || 'MCQ',
+        q.hiddenTestCases || ''
+      ];
+    });
+
+    if (rowsToAppend.length > 0) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAppend.length, rowsToAppend[0].length).setValues(rowsToAppend);
+    }
+
+    return {
+      success: true,
+      count: questionsArray.length,
+      targetSheet: sheetName
+    };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
+}
+
+// ==========================================
+// 7. EVALUATE SUBMITTED ANSWERS
+// ==========================================
+function submitTestAnswers(userAnswers, isTimerExpired) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var userEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || "student@student.hindustanuniv.ac.in";
+    
+    var activeBatchRes = getQuestionsData();
+    var sheetName = (activeBatchRes && activeBatchRes.activeSheet) ? activeBatchRes.activeSheet : "Questions - Aptitude";
+    var qSheet = ss.getSheetByName(sheetName);
+    var testTypeLabel = sheetName.replace("Questions - ", "");
+
+    var rSheet = getOrCreateSheet("Responses");
+    var userEmailLower = userEmail.toLowerCase();
+
+    if (rSheet.getLastRow() > 1) {
+      var rData = rSheet.getDataRange().getValues();
+      for (var k = 1; k < rData.length; k++) {
+        var prevEmail = String(rData[k][1] || "").trim().toLowerCase();
+        var prevTest = String(rData[k][4] || "").trim().toLowerCase();
+
+        if (prevEmail === userEmailLower && prevTest === testTypeLabel.toLowerCase()) {
+          return { success: false, message: "You have already completed this assessment." };
+        }
+      }
+    }
+
+    var totalMarksObtained = 0;
+    var maxPossibleMarks = 0;
+
+    if (qSheet && qSheet.getLastRow() > 1) {
+      var qData = qSheet.getDataRange().getValues();
+
+      var latestTimestamp = "";
+      for (var m = qData.length - 1; m >= 1; m--) {
+        var ts = String(qData[m][8] || "").trim();
+        if (ts !== "") {
+          latestTimestamp = ts;
+          break;
+        }
+      }
+
+      for (var i = 1; i < qData.length; i++) {
+        var row = qData[i];
+        if (!row[0] || String(row[0]).trim() === "") continue;
+
+        var rowTimestamp = String(row[8] || "").trim();
+
+        if (rowTimestamp === latestTimestamp) {
+          var qId = "Q" + i;
+          var correctAnswer = String(row[5] || "").trim().toLowerCase();
+          var questionMarks = Number(row[6]) || 1;
+          var studentAnswer = String(userAnswers[qId] || "").trim().toLowerCase();
+          var rawQType = String(row[12] || "").trim().toUpperCase();
+
+          maxPossibleMarks += questionMarks;
+
+          if (rawQType === "COMPILER") {
+            if (studentAnswer !== "") {
+              totalMarksObtained += questionMarks;
+            }
+          } else {
+            if (studentAnswer !== "" && correctAnswer !== "") {
+              if (studentAnswer === correctAnswer) {
+                totalMarksObtained += questionMarks;
+              } else if (correctAnswer.length === 1 && (correctAnswer >= 'a' && correctAnswer <= 'd')) {
+                var optIndex = correctAnswer.charCodeAt(0) - 97;
+                var correctOptionValue = String(row[1 + optIndex] || "").trim().toLowerCase();
+                if (studentAnswer === correctOptionValue) {
+                  totalMarksObtained += questionMarks;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (rSheet.getLastRow() === 0) {
+      rSheet.appendRow(["Timestamp", "Email", "Name", "Status", "Test Type", "Total Marks"]);
+    }
+
+    var timestamp = new Date().toLocaleString();
+    var userName = userEmail.split('@')[0];
+    userName = userName.charAt(0).toUpperCase() + userName.slice(1);
+    var scoreDisplay = totalMarksObtained + " / " + maxPossibleMarks;
+
+    rSheet.appendRow([
+      timestamp,
+      userEmail,
+      userName,
+      "Submitted",
+      testTypeLabel,
+      scoreDisplay
+    ]);
+
+    return {
+      success: true,
+      message: "Successfully Completed"
+    };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
+}
+
+// ==========================================
+// 8. AGENT 1: AUTONOMOUS QUESTION CREATOR
+// ==========================================
+function runQuestionCreatorAgent(topic, qType, count, displayStart, displayUntil, timeoutMins) {
+  try {
+    var systemPrompt = "You are an expert Computer Science Professor and Assessment Creator Agent. " +
+      "Generate an assessment on topic: '" + topic + "'. Type: '" + qType + "'. Count: " + count + ". " +
+      "Return ONLY a JSON object with a key 'questions' containing an array of question objects.\n" +
+      "Format for MCQ:\n" +
+      "{\"questions\": [{\"question\": \"...\", \"type\": \"MCQ\", \"optionA\": \"...\", \"optionB\": \"...\", \"optionC\": \"...\", \"optionD\": \"...\", \"answer\": \"Option A text\", \"marks\": 1}]}\n" +
+      "Format for COMPILER:\n" +
+      "{\"questions\": [{\"question\": \"...\", \"type\": \"COMPILER\", \"sampleInput\": \"...\", \"sampleOutput\": \"...\", \"hiddenTestCases\": \"TC1: in|out\\nTC2: in|out\", \"marks\": 5}]}";
+
+    var rawResponse = callGroqAPI([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: "Generate " + count + " " + qType + " questions for " + topic }
+    ], true);
+
+    var parsed = JSON.parse(rawResponse);
+    if (!parsed.questions || !Array.isArray(parsed.questions)) {
+      return { success: false, message: "Agent failed to return a valid questions array." };
+    }
+
+    var formattedQuestions = parsed.questions.map(function(q) {
+      return {
+        question: q.question,
+        type: qType === 'Coding' ? 'COMPILER' : 'MCQ',
+        optionA: q.optionA || '',
+        optionB: q.optionB || '',
+        optionC: q.optionC || '',
+        optionD: q.optionD || '',
+        sampleInput: q.sampleInput || '',
+        sampleOutput: q.sampleOutput || '',
+        answer: q.answer || '',
+        hiddenTestCases: q.hiddenTestCases || '',
+        marks: q.marks || 1,
+        uploadedBy: 'AI Question Creator Agent'
+      };
+    });
+
+    var uploadRes = uploadQuestionsBatch(qType, formattedQuestions, displayStart, displayUntil, timeoutMins);
+    return uploadRes;
+  } catch (err) {
+    return { success: false, message: "Question Creator Agent Error: " + err.toString() };
+  }
+}
+
+// ==========================================
+// 9. AGENT 2: AUTOMATED CODE REVIEW & DIAGNOSTIC
+// ==========================================
+function runCodeReviewAgent(studentCode, questionText, language) {
+  try {
+    if (!studentCode || !studentCode.trim()) {
+      return { success: false, message: "No source code provided for review." };
+    }
+
+    var systemPrompt = "You are a Senior Software Architect Code Reviewer Agent. " +
+      "Analyze the user's code for: 1. Big-O Time Complexity, 2. Big-O Space Complexity, " +
+      "3. Code Readability & Naming Conventions, 4. Edge Case Vulnerabilities, 5. Concise Optimization Advice. " +
+      "Format as clear Markdown with bullet points.";
+
+    var userContent = "Question: " + questionText + "\nLanguage: " + language + "\nSource Code:\n```" + language + "\n" + studentCode + "\n```";
+
+    var reviewText = callGroqAPI([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent }
+    ], false);
+
+    return { success: true, review: reviewText };
+  } catch (err) {
+    return { success: false, message: "Code Review Agent Error: " + err.toString() };
+  }
+}
+
+// ==========================================
+// 10. AGENT 3: REMEDIAL LEARNING COACH
+// ==========================================
+function runRemedialCoachAgent() {
+  try {
+    var activeUserEmail = Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || "student@student.hindustanuniv.ac.in";
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName("Responses");
+
+    var pastHistory = "No previous assessment attempts recorded.";
+    if (sheet && sheet.getLastRow() > 1) {
+      var data = sheet.getDataRange().getValues();
+      var studentAttempts = [];
+      for (var i = 1; i < data.length; i++) {
+        if (String(data[i][1]).toLowerCase().trim() === activeUserEmail.toLowerCase().trim()) {
+          studentAttempts.push("Test: " + data[i][4] + " | Score: " + data[i][5] + " | Date: " + data[i][0]);
+        }
+      }
+      if (studentAttempts.length > 0) {
+        pastHistory = studentAttempts.join("\n");
+      }
+    }
+
+    var systemPrompt = "You are an Intelligent Remedial Learning Coach Agent for university students. " +
+      "Based on the student's past performance data, construct: " +
+      "1. A Diagnostic Skill Assessment, 2. Key Weakness Identification, 3. A 3-step Study Roadmap, 4. 2 Custom Practice Problems to try.";
+
+    var coachPlan = callGroqAPI([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: "Student Email: " + activeUserEmail + "\nPerformance History:\n" + pastHistory }
+    ], false);
+
+    return { success: true, plan: coachPlan };
+  } catch (err) {
+    return { success: false, message: "Remedial Coach Error: " + err.toString() };
+  }
+}
+
+// ==========================================
+// 11. AGENT 4: PROCTORING INTEGRITY AUDITOR
+// ==========================================
+function runProctoringAgent(pasteCount, tabSwitchCount, durationSeconds) {
+  try {
+    var systemPrompt = "You are an Automated Exam Proctoring Security Agent. " +
+      "Analyze the metrics and produce a JSON evaluation with keys: 'riskLevel' ('Low' | 'Medium' | 'High'), " +
+      "'integrityScore' (number 0-100), and 'reasons' (array of strings explaining the verdict).\n" +
+      "Rules: Many tab switches (>3) or excessive paste operations (>5) during short durations (<300s) indicate high risk.";
+
+    var userContent = "Metrics: Paste Count = " + pasteCount + ", Tab Switches = " + tabSwitchCount + ", Total Duration = " + durationSeconds + " seconds.";
+
+    var rawRes = callGroqAPI([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent }
+    ], true);
+
+    var parsed = JSON.parse(rawRes);
+    return { success: true, audit: parsed };
+  } catch (err) {
+    return { success: false, message: "Proctoring Agent Error: " + err.toString() };
+  }
+}
+
+// ==========================================
+// 12. GROQ CHATBOT CONVERSATIONAL ENDPOINT
+// ==========================================
+/**
+ * Calls Groq API with concise system instructions.
+ */
+/**
+ * Calls Groq API with robust error handling and concise system instructions.
+ */
+function callGroqChatbot(userPrompt, isTestActive, currentQContext) {
+  try {
+    // Fetch directly from Script Properties
+    var apiKey = PropertiesService.getScriptProperties().getProperty("GROQ_API_KEY"); 
+    var url = "https://api.groq.com/openai/v1/chat/completions";
+
+    if (!apiKey) {
+      return {
+        success: false,
+        message: "API Key is missing in Script Properties."
+      };
+    }
+    // ... rest of your function remains the same
+
+    // Concise system prompt enforcing short, crisp, and clear responses
+    var systemPrompt = "You are a concise AI tutor. " +
+                       "Provide short, crisp, and direct answers in 2 to 3 sentences maximum. " +
+                       "Use plain, easy-to-understand language. Avoid fluff, lengthy explanations, or long lists.";
+
+    if (isTestActive) {
+      systemPrompt += " Note: The student is currently taking an assessment. " +
+                      "Do NOT give direct answers or code solutions to questions. " +
+                      "Only give short, helpful hints or concepts.";
+    }
+
+    var userMessage = userPrompt;
+    if (currentQContext) {
+      userMessage = "Context Question: " + currentQContext + "\nUser Input: " + userPrompt;
+    }
+
+    var payload = {
+  "model": "llama-3.3-70b-versatile", // Updated working model string
+  "messages": [
+    { "role": "system", "content": systemPrompt },
+    { "role": "user", "content": userMessage }
+  ],
+  "max_tokens": 150,
+  "temperature": 0.3
+};
+
+    var options = {
+      "method": "post",
+      "contentType": "application/json",
+      "headers": {
+        "Authorization": "Bearer " + apiKey
+      },
+      "payload": JSON.stringify(payload),
+      "muteHttpExceptions": true
+    };
+
+    var response = UrlFetchApp.fetch(url, options);
+    var responseCode = response.getResponseCode();
+    var responseText = response.getContentText();
+    var json = JSON.parse(responseText);
+
+    // If HTTP Status is not 200 OK, catch and display the exact Groq API error
+    if (responseCode !== 200) {
+      var apiErrorMsg = (json.error && json.error.message) ? json.error.message : responseText;
+      Logger.log("Groq API Error: " + apiErrorMsg);
+      return {
+        success: false,
+        message: "Groq API Error (" + responseCode + "): " + apiErrorMsg
+      };
+    }
+
+    if (json.choices && json.choices.length > 0 && json.choices[0].message) {
+      return {
+        success: true,
+        reply: json.choices[0].message.content.trim()
+      };
+    } else {
+      return {
+        success: false,
+        message: "No valid answer choice generated by Groq."
+      };
+    }
+
+  } catch (err) {
+    Logger.log("Server Exception: " + err.toString());
+    return {
+      success: false,
+      message: "Server Error: " + err.toString()
+    };
+  }
+}
+
+/**
+ * Calculates currently active students taking the assessment.
+ * Filters attendance by non-submitted active sessions within the allowed duration.
+ */
+function getAttendanceData() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // 1. Fetch Responses Sheet to cross-reference already submitted students
+    var responseSheet = ss.getSheetByName("Responses");
+    var submittedEmails = new Set();
+    
+    if (responseSheet) {
+      var responseData = responseSheet.getDataRange().getValues();
+      for (var i = 1; i < responseData.length; i++) {
+        var email = String(responseData[i][1]).trim().toLowerCase(); // Assuming Column B contains student email
+        if (email) {
+          submittedEmails.add(email);
+        }
+      }
+    }
+
+    // 2. Fetch Active Sessions / Logs Sheet
+    // Reads currently logged-in active students who haven't completed submission yet
+    var activeSheet = ss.getSheetByName("ActiveSessions") || ss.getSheetByName("Logs");
+    var currentActiveCount = 0;
+
+    if (activeSheet) {
+      var activeData = activeSheet.getDataRange().getValues();
+      var now = new Date().getTime();
+      var sessionTimeoutMs = 60 * 60 * 1000; // 60-minute active window buffer
+
+      for (var j = 1; j < activeData.length; j++) {
+        var studentEmail = String(activeData[j][1]).trim().toLowerCase();
+        var startTimeStamp = new Date(activeData[j][2]).getTime(); // Assuming Column C contains start timestamp
+        var status = String(activeData[j][3]).trim().toUpperCase(); // Optional Status column (e.g., "IN_PROGRESS")
+
+        // Filter: Must NOT have submitted yet AND must be within active exam time frame
+        if (studentEmail && !submittedEmails.has(studentEmail)) {
+          if (!isNaN(startTimeStamp) && (now - startTimeStamp <= sessionTimeoutMs)) {
+            if (status === "" || status === "IN_PROGRESS" || status === "ACTIVE") {
+              currentActiveCount++;
+            }
+          }
+        }
+      }
+    } else {
+      // Fallback: If no dedicated ActiveSessions sheet exists, count responses recorded in the last 60 minutes
+      if (responseSheet) {
+        var rows = responseSheet.getDataRange().getValues();
+        var now = new Date().getTime();
+        for (var k = 1; k < rows.length; k++) {
+          var submitTime = new Date(rows[k][0]).getTime(); // Timestamp column
+          if (!isNaN(submitTime) && (now - submitTime <= 60 * 60 * 1000)) {
+            currentActiveCount++;
+          }
+        }
+      }
+    }
+
+    return {
+      success: true,
+      count: currentActiveCount
+    };
+
+  } catch (err) {
+    return {
+      success: false,
+      count: 0,
+      message: err.toString()
+    };
+  }
+}
+function getTopRankers() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName("Responses");
+    if (!sheet || sheet.getLastRow() <= 1) {
+      return { success: false, message: "No response data found yet." };
+    }
+
+    var data = sheet.getDataRange().getValues();
+    var rankList = [];
+
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var name = String(row[2] || "").trim() || String(row[1] || "").split('@')[0];
+      var email = String(row[1] || "").trim();
+      var testType = String(row[4] || "").trim();
+      var scoreStr = String(row[5] || "").trim();
+
+      var obtained = 0;
+      var total = 0;
+      var percentage = 0;
+
+      if (scoreStr.indexOf("/") !== -1) {
+        var parts = scoreStr.split("/");
+        obtained = parseFloat(parts[0]) || 0;
+        total = parseFloat(parts[1]) || 1;
+        percentage = (obtained / total) * 100;
+      } else {
+        obtained = parseFloat(scoreStr) || 0;
+      }
+
+      rankList.push({
+        name: name,
+        email: email,
+        testType: testType,
+        scoreDisplay: scoreStr,
+        obtained: obtained,
+        percentage: percentage
+      });
+    }
+
+    rankList.sort(function(a, b) {
+      if (b.percentage !== a.percentage) {
+        return b.percentage - a.percentage;
+      }
+      return b.obtained - a.obtained;
+    });
+
+    return {
+      success: true,
+      topRankers: rankList.slice(0, 5)
+    };
+  } catch (err) {
+    return { success: false, message: err.toString() };
+  }
+}

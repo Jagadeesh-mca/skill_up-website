@@ -1,0 +1,1544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skill Up Assessment System</title>
+  
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs/loader.min.js"></script>
+
+  <!-- TENSORFLOW.JS LIBRARIES FOR WEBCAM PHONE DETECTION -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+  <style>
+    body {
+      font-family: 'Montserrat', sans-serif;
+      background: radial-gradient(circle at 50% 20%, #0d254c 0%, #050b14 70%, #020509 100%);
+      color: #ffffff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+    }
+
+    @media print { body { display: none !important; } }
+
+    .app-card {
+      width: 100%;
+      max-width: 1100px;
+      background: rgba(13, 27, 46, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(0, 229, 255, 0.25);
+      box-shadow: 0 0 50px rgba(0, 150, 255, 0.2);
+      border-radius: 20px;
+      padding: 35px;
+      text-align: center;
+      margin-top: 20px;
+      position: relative;
+    }
+
+    .college-title {
+      font-size: 28px;
+      font-weight: 900;
+      color: #ffffff;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 12px;
+      text-shadow: 0 0 15px rgba(0, 229, 255, 0.6);
+    }
+
+    .department-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+
+    .assessment-title {
+      font-size: 26px;
+      font-weight: 900;
+      color: #34d399;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+
+    .glow-divider {
+      height: 1px;
+      background: linear-gradient(90deg, transparent, #00e5ff, transparent);
+      margin: 0 auto 25px auto;
+      width: 85%;
+    }
+
+    .btn-role, .btn-dash {
+      background: rgba(15, 23, 42, 0.8);
+      border: 2px solid rgba(56, 189, 248, 0.5);
+      color: #ffffff;
+      padding: 22px;
+      border-radius: 15px;
+      font-weight: 700;
+      transition: all 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+    }
+
+    .btn-role:hover, .btn-dash:hover {
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      border-color: #00e5ff;
+      transform: translateY(-4px);
+      box-shadow: 0 0 25px rgba(0, 229, 255, 0.4);
+    }
+
+    .option-card {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 12px;
+      padding: 14px 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-align: left;
+      transition: all 0.2s ease;
+      color: #ffffff !important;
+    }
+
+    .option-card * { color: #ffffff !important; }
+
+    .option-card:hover {
+      border-color: #00e5ff;
+      background: rgba(56, 189, 248, 0.2);
+    }
+
+    .modal-content {
+      background: #0f172a;
+      border: 1px solid #38bdf8;
+      color: #ffffff;
+      border-radius: 15px;
+    }
+
+    #monaco-container {
+      width: 100%;
+      height: 320px;
+      border: 1px solid #38bdf8;
+      border-radius: 8px;
+      overflow: hidden;
+      text-align: left;
+    }
+
+    .sample-box {
+      background-color: #050b14;
+      color: #38bdf8;
+      font-family: 'Fira Code', monospace;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      white-space: pre-wrap;
+      word-break: break-word;
+      text-align: left;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+
+    .console-output {
+      background-color: #050b14;
+      color: #38bdf8;
+      font-family: 'Fira Code', monospace;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      min-height: 90px;
+      max-height: 180px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      text-align: left;
+      font-size: 13px;
+    }
+
+    .palette-btn {
+      width: 42px;
+      height: 42px;
+      font-weight: 700;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .palette-unanswered {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      color: #ffffff;
+    }
+
+    .palette-answered {
+      background: #198754 !important;
+      border: 1px solid #20c997 !important;
+      color: #ffffff !important;
+    }
+
+    .palette-current {
+      background: #ffc107 !important;
+      border: 2px solid #ffffff !important;
+      color: #000000 !important;
+      box-shadow: 0 0 10px rgba(255, 193, 7, 0.8);
+    }
+
+    input[type="date"]::-webkit-calendar-picker-indicator,
+    input[type="time"]::-webkit-calendar-picker-indicator {
+      filter: invert(1);
+      cursor: pointer;
+    }
+
+    .rank-badge-1 { background: linear-gradient(135deg, #ffd700, #b8860b); color: #000; }
+    .rank-badge-2 { background: linear-gradient(135deg, #c0c0c0, #708090); color: #000; }
+    .rank-badge-3 { background: linear-gradient(135deg, #cd7f32, #8b4513); color: #fff; }
+
+    /* CHATBOT WIDGET STYLES */
+    #chatbotToggleBtn {
+      position: fixed;
+      bottom: 25px;
+      right: 25px;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #00e5ff, #0284c7);
+      color: #000;
+      border: none;
+      box-shadow: 0 0 20px rgba(0, 229, 255, 0.5);
+      font-size: 24px;
+      z-index: 1050;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    #chatbotToggleBtn:hover { transform: scale(1.1); }
+
+    #chatbotWindow {
+      position: fixed;
+      bottom: 95px;
+      right: 25px;
+      width: 380px;
+      height: 520px;
+      background: #0f172a;
+      border: 1px solid #38bdf8;
+      border-radius: 15px;
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.8);
+      display: none;
+      flex-direction: column;
+      z-index: 1050;
+      overflow: hidden;
+    }
+
+    .chat-header {
+      background: #050b14;
+      padding: 14px 18px;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.3);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chat-body {
+      flex: 1;
+      padding: 15px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chat-msg {
+      max-width: 82%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .msg-user { align-self: flex-end; background: #0284c7; color: #fff; }
+    .msg-bot { align-self: flex-start; background: #1e293b; color: #e2e8f0; border: 1px solid rgba(56, 189, 248, 0.2); }
+
+    .chat-footer {
+      padding: 10px;
+      background: #050b14;
+      border-top: 1px solid rgba(56, 189, 248, 0.3);
+      display: flex;
+      gap: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- MESSAGE MODAL -->
+  <div class="modal fade" id="appMessageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content text-center p-4">
+        <div class="modal-body">
+          <div id="msgModalIcon" class="mb-3"></div>
+          <h4 id="msgModalTitle" class="fw-bold mb-2">Notification</h4>
+          <p id="msgModalBody" class="text-light opacity-90 my-3 fs-5"></p>
+          <button type="button" class="btn btn-outline-info px-4 mt-2" data-bs-dismiss="modal" onclick="onMessageModalClose()">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-card">
+    <header>
+      <h2 class="college-title">HINDUSTAN INSTITUTE OF COLLEGE</h2>
+      <div class="department-title">Department of Computer Applications</div>
+      <div class="assessment-title">Skill Up Assessment System</div>
+      <div class="glow-divider"></div>
+    </header>
+
+    <!-- ROLE SELECTION PAGE -->
+    <div id="roleSelectionPage">
+      <h4 class="mb-4 text-info"><i class="fa-solid fa-user-shield me-2"></i>Select Portal Access</h4>
+      <div class="row g-4 col-md-10 mx-auto">
+        <div class="col-md-6">
+          <button class="btn btn-role" onclick="handleRoleClick('Faculty')">
+            <i class="fa-solid fa-chalkboard-user fa-3x text-info"></i> Faculty Portal
+          </button>
+        </div>
+        <div class="col-md-6">
+          <button class="btn btn-role" onclick="handleRoleClick('Student')">
+            <i class="fa-solid fa-graduation-cap fa-3x text-success"></i> Student Portal
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOADING SCREEN -->
+    <div id="loadingScreen" style="display: none;" class="py-5">
+      <div class="spinner-border text-info mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+      <h5 class="text-info" id="loadingText">Verifying Credentials...</h5>
+      <p class="text-secondary small" id="loadingSubtext">Processing request...</p>
+    </div>
+
+    <!-- ERROR PAGE -->
+    <div id="unauthorizedPage" style="display: none;">
+      <i class="fa-solid fa-triangle-exclamation fa-3x text-danger mb-3"></i>
+      <h4 class="text-danger">Access Restricted</h4>
+      <div id="errorMessage" class="alert alert-danger mt-3"></div>
+      <button class="btn btn-outline-light btn-sm mt-2" onclick="resetToRoleSelection()"><i class="fa-solid fa-arrow-left me-1"></i> Back</button>
+    </div>
+
+    <!-- FACULTY DASHBOARD -->
+    <div id="facultyDashboard" style="display: none;">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="text-start">
+          <h4 class="text-success m-0"><i class="fa-solid fa-chalkboard-user me-2"></i>Welcome, <span id="facultyNameText">Faculty</span>!</h4>
+          <span id="facultyEmailBadge" class="badge bg-info text-dark mt-2"></span>
+        </div>
+        <div>
+          <button id="facultySwitchBtn" class="btn btn-outline-warning btn-sm me-2" style="display: none;" onclick="switchPortal('Student')"><i class="fa-solid fa-right-left me-1"></i> Switch</button>
+          <button class="btn btn-outline-danger btn-sm" onclick="resetToRoleSelection()"><i class="fa-solid fa-power-off"></i> Exit</button>
+        </div>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-md-3">
+          <button class="btn btn-dash" onclick="showAttendance()"><i class="fa-solid fa-users fa-2x text-info"></i> Attendance</button>
+        </div>
+        <div class="col-md-3">
+          <button class="btn btn-dash" onclick="showTopRankersModal()"><i class="fa-solid fa-trophy fa-2x text-warning"></i> Top Rankers</button>
+        </div>
+        <div class="col-md-3">
+          <button class="btn btn-dash" onclick="openAgentCreatorModal()"><i class="fa-solid fa-wand-magic-sparkles fa-2x text-warning"></i> AI Test Generator Agent</button>
+        </div>
+        <div class="col-md-3">
+          <!-- TRIGGER TYPE SELECTION MODAL FIRST -->
+          <button class="btn btn-dash" onclick="openUploadTypeModal()"><i class="fa-solid fa-file-excel fa-2x text-primary"></i> Upload Questions</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STUDENT DASHBOARD -->
+    <div id="studentDashboard" style="display: none;">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="text-start">
+          <h4 class="text-success m-0"><i class="fa-solid fa-graduation-cap me-2"></i>Welcome, <span id="studentNameText">Student</span>!</h4>
+          <span id="studentEmailBadge" class="badge bg-info text-dark mt-2"></span>
+        </div>
+        <div>
+          <button id="studentSwitchBtn" class="btn btn-outline-warning btn-sm me-2" style="display: none;" onclick="switchPortal('Faculty')"><i class="fa-solid fa-right-left me-1"></i> Switch</button>
+          <button class="btn btn-outline-danger btn-sm" onclick="resetToRoleSelection()"><i class="fa-solid fa-power-off"></i> Exit</button>
+        </div>
+      </div>
+
+      <div id="alreadyAttemptedCard" style="display: none;" class="card bg-transparent border-warning p-4 text-center col-md-9 mx-auto my-4">
+        <i class="fa-solid fa-circle-check fa-4x text-success mb-3"></i>
+        <h4 class="text-success">Assessment Completed</h4>
+        <p class="text-light opacity-90 mt-2 fs-6">You have already submitted this assessment.</p>
+        <button class="btn btn-outline-info col-md-6 mx-auto mt-2" onclick="triggerRemedialCoachAgent()">
+          <i class="fa-solid fa-brain me-2"></i> Get AI Remedial Learning Plan
+        </button>
+      </div>
+
+      <div id="testStartCard" class="card bg-transparent border-info p-5 text-center col-md-8 mx-auto my-4">
+        <i class="fa-solid fa-pen-to-square fa-4x text-info mb-3"></i>
+        <h3 class="text-white mb-3">Assessment Portal</h3>
+        <p class="text-light opacity-75 mb-4">Click below to start your latest assessment.</p>
+        
+        <button class="btn btn-success btn-lg px-5 py-3 fw-bold fs-5 shadow" onclick="startTest()">
+          Take Assessment
+        </button>
+      </div>
+
+      <div id="testContainer" style="display: none; position: relative;">
+        <!-- FLOATING WATERMARK OVERLAY -->
+        <div id="watermarkOverlay" style="
+          position: absolute; 
+          top: 0; left: 0; width: 100%; height: 100%; 
+          pointer-events: none; z-index: 999; 
+          display: flex; flex-wrap: wrap; justify-content: space-around; align-items: center; 
+          opacity: 0.15; font-size: 16px; font-weight: bold; color: #ffffff; 
+          transform: rotate(-20deg); user-select: none;">
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center bg-dark p-3 rounded mb-3 border border-info">
+          <div>
+            <span class="badge bg-primary fs-6 me-2" id="activeTestBadge">Assessment</span>
+            <span class="text-info fw-bold" id="questionProgressText">Question 1</span>
+          </div>
+          
+          <div class="d-flex align-items-center gap-3">
+            <!-- WEBCAM MONITOR FOR PHONE DETECTION -->
+            <video id="webcamFeed" autoplay playsinline muted style="width: 120px; height: 90px; border-radius: 8px; border: 1px solid #38bdf8; object-fit: cover; background: #000;"></video>
+
+            <div class="bg-danger text-white px-3 py-1 rounded-pill fw-bold fs-5">
+              <i class="fa-solid fa-stopwatch me-1"></i> <span id="examTimerDisplay">60:00</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3 text-start">
+          <div class="col-md-8">
+            <div class="card bg-dark border-secondary p-4 h-100">
+              <h5 id="questionText" class="text-white mb-4">...</h5>
+              
+              <!-- OBJECTIVE / MCQ MODE CONTAINER -->
+              <div id="aptitudeModeContainer" class="flex-column gap-3 d-none">
+                <div id="optionsContainer" class="d-flex flex-column gap-3"></div>
+              </div>
+
+              <!-- COMPILER MODE CONTAINER -->
+              <div id="codingModeContainer" style="display: none;">
+                <div class="row g-2 mb-3">
+                  <div class="col-md-6" id="sampleInputContainer" style="display: none;">
+                    <div class="small text-info fw-bold mb-1"><i class="fa-solid fa-arrow-right-to-bracket me-1"></i>Sample Input:</div>
+                    <div id="sampleInputBox" class="sample-box"></div>
+                  </div>
+                  <div class="col-md-6" id="sampleOutputContainer" style="display: none;">
+                    <div class="small text-success fw-bold mb-1"><i class="fa-solid fa-arrow-right-from-bracket me-1"></i>Sample Output:</div>
+                    <div id="sampleOutputBox" class="sample-box"></div>
+                  </div>
+                </div>
+
+                <div class="row mb-3 align-items-center">
+                  <div class="col-md-5">
+                    <label class="form-label text-info fw-bold">Language:</label>
+                    <select id="languageSelect" class="form-select bg-dark text-white border-secondary" onchange="changeLanguage()">
+                      <option value="python">Python 3</option>
+                      <option value="cpp">C++ (GCC)</option>
+                      <option value="java">Java</option>
+                      <option value="javascript">JavaScript (Node.js)</option>
+                    </select>
+                  </div>
+                  <div class="col-md-7 text-end mt-3 mt-md-0">
+                    <button class="btn btn-outline-info me-2" onclick="runCodeAgainstPiston()"><i class="fa-solid fa-terminal me-1"></i> Run Code</button>
+                    <button class="btn btn-outline-warning" onclick="triggerCodeReviewAgent()"><i class="fa-solid fa-magnifying-glass-code me-1"></i> AI Review Agent</button>
+                  </div>
+                </div>
+
+                <div id="monaco-container" class="mb-3"></div>
+                <div id="consoleOutput" class="console-output">Ready to execute code...</div>
+              </div>
+
+              <div class="d-flex justify-content-between mt-4 pt-3 border-top border-secondary">
+                <button id="prevBtn" class="btn btn-outline-secondary" onclick="prevQuestion()" disabled>Previous</button>
+                <button id="nextBtn" class="btn btn-info text-dark font-weight-bold" onclick="nextQuestion()">Next</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-4">
+            <div class="card bg-dark border-secondary p-3 h-100 d-flex flex-column">
+              <h6 class="text-info border-bottom border-secondary pb-2 mb-3">
+                <i class="fa-solid fa-grid-2 me-2"></i>Question Palette
+              </h6>
+              
+              <div id="questionPaletteGrid" class="d-flex flex-wrap gap-2 justify-content-start mb-4"></div>
+
+              <div class="small border-top border-secondary pt-3 mt-auto">
+                <div class="d-flex align-items-center mb-2">
+                  <span class="badge bg-secondary text-white me-2 px-2 py-1" style="width: 65px;">Gray</span>
+                  <span class="text-light">Unanswered</span>
+                </div>
+                <div class="d-flex align-items-center mb-2">
+                  <span class="badge bg-success text-white me-2 px-2 py-1" style="width: 65px;">Green</span>
+                  <span class="text-light">Answered</span>
+                </div>
+                <div class="d-flex align-items-center mb-3">
+                  <span class="badge bg-warning text-dark fw-bold me-2 px-2 py-1" style="width: 65px;">Yellow</span>
+                  <span class="text-light">Current</span>
+                </div>
+              </div>
+
+              <button class="btn btn-success w-100 fw-bold py-2 mt-2" onclick="attemptFinalSubmit(false)">
+                <i class="fa-solid fa-paper-plane me-2"></i>Submit Test
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- STEP 1: CATEGORY SELECTION MODAL (APTITUDE OR CODING) -->
+  <div class="modal fade" id="uploadTypeSelectionModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content p-4 text-center">
+        <div class="modal-header border-0">
+          <h5 class="modal-title text-info fw-bold"><i class="fa-solid fa-list-check me-2"></i>Select Assessment Category</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body my-2">
+          <p class="text-light opacity-75 mb-4">What type of assessment questions are you uploading?</p>
+          <div class="d-flex flex-column gap-3 col-md-10 mx-auto">
+            <button class="btn btn-outline-info py-3 fw-bold fs-5 text-start d-flex align-items-center justify-content-between" onclick="selectUploadCategory('Aptitude')">
+              <span><i class="fa-solid fa-list-ul me-3 text-info"></i> Aptitude (MCQ)</span>
+              <i class="fa-solid fa-chevron-right"></i>
+            </button>
+            <button class="btn btn-outline-warning py-3 fw-bold fs-5 text-start d-flex align-items-center justify-content-between" onclick="selectUploadCategory('Coding')">
+              <span><i class="fa-solid fa-code me-3 text-warning"></i> Coding (Compiler)</span>
+              <i class="fa-solid fa-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2: UPLOAD MODAL -->
+  <div class="modal fade" id="uploadModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content p-4">
+        <div class="modal-header border-0">
+          <h5 class="modal-title text-info"><i class="fa-solid fa-file-excel me-2"></i>Upload Questions - <span id="uploadTypeTitle"></span></h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body text-start">
+          <div class="card bg-dark border-info p-3 mb-4">
+            <label class="form-label text-warning fw-bold mb-2">
+              <i class="fa-solid fa-calendar-check me-1"></i> Assessment Schedule & Timeout Controls
+            </label>
+            <div class="row g-2 mb-2">
+              <div class="col-md-6">
+                <label class="form-label text-light small">Start Date & Time (Column J):</label>
+                <div class="input-group">
+                  <input type="date" class="form-control bg-dark text-white border-secondary" id="startDatePicker">
+                  <input type="time" class="form-control bg-dark text-white border-secondary" id="startTimePicker" value="08:00">
+                </div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label text-light small">End Date & Time (Column K):</label>
+                <div class="input-group">
+                  <input type="date" class="form-control bg-dark text-white border-secondary" id="expiryDatePicker">
+                  <input type="time" class="form-control bg-dark text-white border-secondary" id="expiryTimePicker" value="23:59">
+                </div>
+              </div>
+            </div>
+            <div>
+              <label class="form-label text-light small">Exam Duration Timeout (Minutes):</label>
+              <input type="number" class="form-control bg-dark text-white border-secondary" id="timeoutMinsPicker" value="60" min="1">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label text-info font-weight-bold"><i class="fa-solid fa-file-circle-plus me-1"></i> Upload Excel File (.xlsx / .xls)</label>
+            <input type="file" class="form-control bg-dark text-white border-secondary" id="excelFileInput" accept=".xlsx, .xls">
+          </div>
+
+          <div class="text-center my-3 text-secondary">--- OR Enter Single Question Manually ---</div>
+
+          <div class="row g-2">
+            <div class="col-12"><input type="text" id="mQ" class="form-control bg-dark text-white border-secondary" placeholder="Question Text or Problem Statement"></div>
+            <div class="col-6">
+              <select id="mType" class="form-select bg-dark text-white border-secondary">
+                <option value="MCQ">MCQ (Objective)</option>
+                <option value="COMPILER">Compiler (Problem Statement)</option>
+              </select>
+            </div>
+            <div class="col-6"><input type="number" id="mMarks" class="form-control bg-dark text-white border-secondary" placeholder="Mark Allotted (Default 1)" value="1"></div>
+            <div class="col-6"><input type="text" id="mA" class="form-control bg-dark text-white border-secondary" placeholder="Option A (For MCQ) / Sample Input (Coding)"></div>
+            <div class="col-6"><input type="text" id="mB" class="form-control bg-dark text-white border-secondary" placeholder="Option B (For MCQ) / Sample Output (Coding)"></div>
+            <div class="col-6"><input type="text" id="mC" class="form-control bg-dark text-white border-secondary" placeholder="Option C (For MCQ)"></div>
+            <div class="col-6"><input type="text" id="mD" class="form-control bg-dark text-white border-secondary" placeholder="Option D (For MCQ)"></div>
+            <div class="col-12"><input type="text" id="mAns" class="form-control bg-dark text-white border-secondary" placeholder="Correct Answer (MCQ) / 5 Hidden Test Cases (Coding)"></div>
+          </div>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="processUpload()"><i class="fa-solid fa-cloud-arrow-up me-1"></i> Upload</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AGENT QUESTION CREATOR MODAL -->
+  <div class="modal fade" id="agentCreatorModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content p-4">
+        <div class="modal-header border-0">
+          <h5 class="modal-title text-warning"><i class="fa-solid fa-wand-magic-sparkles me-2"></i>AI Autonomous Question Creator Agent</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body text-start">
+          <div class="mb-3">
+            <label class="form-label text-light fw-bold">Topic / Domain Prompt:</label>
+            <input type="text" id="agentTopic" class="form-control bg-dark text-white border-secondary" placeholder="e.g., Python Arrays, Data Structures Recursion, SQL Joins">
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label text-light fw-bold">Question Type:</label>
+              <select id="agentType" class="form-select bg-dark text-white border-secondary">
+                <option value="Coding">Coding / Compiler (With 5 Test Cases)</option>
+                <option value="Aptitude">Aptitude / MCQ (Objective Options)</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label text-light fw-bold">Question Count:</label>
+              <input type="number" id="agentCount" class="form-control bg-dark text-white border-secondary" value="3" min="1" max="10">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-warning fw-bold" onclick="executeQuestionCreatorAgent()"><i class="fa-solid fa-robot me-1"></i> Launch Creator Agent</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOP RANKERS MODAL -->
+  <div class="modal fade" id="topRankModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content p-4">
+        <div class="modal-header border-0">
+          <h4 class="modal-title text-warning fw-bold"><i class="fa-solid fa-trophy me-2"></i>Assessment Leaderboard - Top Rankers</h4>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="topRankersContent" class="d-flex flex-column gap-3">
+            <div class="text-center py-3">Loading top rankers...</div>
+          </div>
+        </div>
+        <div class="modal-footer border-0">
+          <button type="button" class="btn btn-outline-info px-4" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONFIRM SUBMIT MODAL -->
+  <div class="modal fade" id="submitConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content text-center p-4">
+        <div class="modal-body">
+          <i class="fa-solid fa-circle-question fa-4x text-warning mb-3"></i>
+          <h4>Confirm Test Submission</h4>
+          <p id="submitConfirmText" class="text-light opacity-75 my-3">Are you sure you want to submit your answers?</p>
+          <div class="d-flex justify-content-center gap-3">
+            <button class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn btn-success px-4" onclick="confirmAndExecuteSubmit(false)">Submit Test</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ATTENDANCE MODAL -->
+  <div class="modal fade" id="attendanceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content text-center p-4">
+        <h3 class="text-info"><i class="fa-solid fa-users me-2"></i>Total Attendance</h3>
+        <h1 id="attendanceCount" class="display-3 text-success my-3">...</h1>
+      </div>
+    </div>
+  </div>
+
+  <!-- FLOATING CHATBOT WIDGET -->
+  <button id="chatbotToggleBtn" onclick="toggleChatWindow()">
+    <i class="fa-solid fa-robot"></i>
+  </button>
+
+  <div id="chatbotWindow">
+    <div class="chat-header">
+      <div class="d-flex align-items-center gap-2">
+        <i class="fa-solid fa-brain text-info"></i>
+        <strong class="text-white">Skill Up AI Tutor</strong>
+      </div>
+      <button class="btn-close btn-close-white" onclick="toggleChatWindow()"></button>
+    </div>
+    <div id="chatBody" class="chat-body">
+      <div class="chat-msg msg-bot">
+        Hello! I'm your AI assistant powered by Groq. How can I help you today?
+      </div>
+    </div>
+    <div class="chat-footer">
+      <input type="text" id="chatInput" class="form-control bg-dark text-white border-secondary" placeholder="Ask a question..." onkeydown="if(event.key==='Enter') sendChatMessage()">
+      <button class="btn btn-info" onclick="sendChatMessage()"><i class="fa-solid fa-paper-plane"></i></button>
+    </div>
+  </div>
+
+  <script>
+    var questionsList = [];
+    var currentQIndex = 0;
+    var userAnswers = {};
+    var currentUserData = null;
+    var selectedUploadType = 'Aptitude';
+    var monacoEditorInstance = null;
+    var activeTestType = 'Aptitude';
+    var isTestActive = false;
+    var pendingModalRedirect = false;
+    
+    // Proctoring Agent Metrics & Webcam Object Detection
+    var pasteEventCount = 0;
+    var tabSwitchCount = 0;
+    var testStartTime = null;
+    var cocoModel = null;
+    var proctorInterval = null;
+
+    var examTimerInterval = null;
+    var totalExamSeconds = 60 * 60;
+
+    var codeTemplates = {
+      python: "# Write your Python 3 code here\ndef solve():\n    print('Hello World')\n\nsolve()",
+      cpp: "// Write your C++ code here\n#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << \"Hello World\";\n    return 0;\n}",
+      java: "// Write your Java code here\npublic class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Hello World\");\n    }\n}",
+      javascript: "// Write your JavaScript code here\nconsole.log('Hello World');"
+    };
+
+    var judge0LangMap = { python: 71, cpp: 54, java: 62, javascript: 63 };
+
+    // DYNAMIC WATERMARK GENERATOR
+    function applyDynamicWatermark() {
+      var overlay = document.getElementById('watermarkOverlay');
+      if (!overlay) return;
+      
+      var userText = 'SKILL UP Assessment | ' + new Date().toLocaleTimeString();
+      overlay.innerHTML = '';
+      
+      for (var i = 0; i < 12; i++) {
+        overlay.innerHTML += '<div>' + userText + '</div>';
+      }
+    }
+
+    // WEBCAM PROCTORING & REAL-TIME PHONE DETECTION
+    async function initWebcamProctoring() {
+      const video = document.getElementById('webcamFeed');
+      if (!video) return;
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: { ideal: 320 }, height: { ideal: 240 } } 
+        });
+        
+        video.srcObject = stream;
+        await video.play().catch(function(e) { console.warn("Video playback interrupted:", e); });
+
+        if (!cocoModel) {
+          cocoModel = await cocoSsd.load();
+        }
+        
+        if (proctorInterval) clearInterval(proctorInterval);
+        proctorInterval = setInterval(detectPhone, 2000);
+      } catch (err) {
+        console.warn("Webcam access error or permission denied:", err);
+        showBootstrapToast("Proctor Alert: Camera access is disabled or unavailable.", "warning");
+      }
+    }
+
+    async function detectPhone() {
+      const video = document.getElementById('webcamFeed');
+      if (!cocoModel || !video || !isTestActive) return;
+
+      if (video.readyState < 2 || video.paused || video.ended || video.videoWidth === 0) {
+        return;
+      }
+
+      try {
+        const predictions = await cocoModel.detect(video);
+        
+        predictions.forEach(prediction => {
+          if (prediction.class === 'cell phone' && prediction.score > 0.6) {
+            showBootstrapToast("SECURITY ALERT: Mobile phone detected by proctoring camera!", "danger");
+            pasteEventCount += 2; 
+          }
+        });
+      } catch (err) {
+        console.error("COCO-SSD Detection error:", err);
+      }
+    }
+
+    window.handleRoleClick = function(selectedRole) {
+      document.getElementById('roleSelectionPage').style.display = 'none';
+      showLoading("Verifying Credentials...", "Verifying portal access...");
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          hideLoading();
+          if (res && res.success) {
+            currentUserData = res;
+            showDashboard(selectedRole);
+          } else {
+            showError((res && res.message) ? res.message : "Access Denied.");
+          }
+        })
+        .withFailureHandler(function(err) {
+          hideLoading();
+          showError("Server Connection Error: " + err);
+        })
+        .verifyUserRole(selectedRole);
+    };
+
+    window.switchPortal = function(targetRole) { showDashboard(targetRole); };
+
+    window.resetToRoleSelection = function() {
+      clearInterval(examTimerInterval);
+      if (proctorInterval) clearInterval(proctorInterval);
+      isTestActive = false;
+
+      const video = document.getElementById('webcamFeed');
+      if (video && video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+        video.srcObject = null;
+      }
+
+      document.getElementById('facultyDashboard').style.display = 'none';
+      document.getElementById('studentDashboard').style.display = 'none';
+      document.getElementById('unauthorizedPage').style.display = 'none';
+      document.getElementById('testContainer').style.display = 'none';
+      document.getElementById('roleSelectionPage').style.display = 'block';
+    };
+
+    // STEP 1: OPEN SELECTION MODAL
+    window.openUploadTypeModal = function() {
+      if (typeof bootstrap !== 'undefined') {
+        new bootstrap.Modal(document.getElementById('uploadTypeSelectionModal')).show();
+      }
+    };
+
+    // STEP 2: HANDLE CATEGORY SELECTION & OPEN UPLOAD FORM
+    window.selectUploadCategory = function(type) {
+      selectedUploadType = type;
+      document.getElementById('uploadTypeTitle').innerText = type;
+
+      // Automatically set the single manual question dropdown to match chosen category
+      var mTypeSelect = document.getElementById('mType');
+      if (mTypeSelect) {
+        mTypeSelect.value = (type === 'Coding') ? 'COMPILER' : 'MCQ';
+      }
+
+      // Hide category selection modal
+      var catModalEl = document.getElementById('uploadTypeSelectionModal');
+      if (typeof bootstrap !== 'undefined') {
+        var catModalInstance = bootstrap.Modal.getInstance(catModalEl);
+        if (catModalInstance) catModalInstance.hide();
+        
+        // Show main upload modal
+        new bootstrap.Modal(document.getElementById('uploadModal')).show();
+      }
+    };
+
+    window.openAgentCreatorModal = function() {
+      if (typeof bootstrap !== 'undefined') {
+        new bootstrap.Modal(document.getElementById('agentCreatorModal')).show();
+      }
+    };
+
+    window.showAttendance = function() {
+      if (typeof bootstrap !== 'undefined') {
+        new bootstrap.Modal(document.getElementById('attendanceModal')).show();
+      }
+      google.script.run.withSuccessHandler(function(d) {
+        document.getElementById('attendanceCount').innerText = d ? d.count : 0;
+      }).getAttendanceData();
+    };
+
+    window.showTopRankersModal = function() {
+      var contentContainer = document.getElementById('topRankersContent');
+      contentContainer.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-warning mb-2"></div><div>Fetching Top Rankers...</div></div>';
+
+      if (typeof bootstrap !== 'undefined') {
+        new bootstrap.Modal(document.getElementById('topRankModal')).show();
+      }
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success && res.topRankers && res.topRankers.length > 0) {
+            var html = '';
+            res.topRankers.forEach(function(ranker, index) {
+              var badgeClass = index === 0 ? 'rank-badge-1' : index === 1 ? 'rank-badge-2' : index === 2 ? 'rank-badge-3' : 'bg-secondary text-white';
+              html += 
+                '<div class="card bg-dark border-secondary p-3 d-flex flex-row align-items-center justify-content-between">' +
+                  '<div class="d-flex align-items-center gap-3">' +
+                    '<span class="badge ' + badgeClass + ' fs-5 rounded-circle px-3 py-2">#' + (index + 1) + '</span>' +
+                    '<div class="text-start">' +
+                      '<h5 class="m-0 text-white fw-bold">' + ranker.name + '</h5>' +
+                      '<span class="small text-info">' + ranker.email + '</span>' +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="text-end">' +
+                    '<span class="badge bg-success fs-6 px-3 py-2">Score: ' + ranker.scoreDisplay + '</span>' +
+                  '</div>' +
+                '</div>';
+            });
+            contentContainer.innerHTML = html;
+          } else {
+            contentContainer.innerHTML = '<div class="alert alert-warning text-center">' + ((res && res.message) ? res.message : 'No rankers available yet.') + '</div>';
+          }
+        })
+        .getTopRankers();
+    };
+
+    window.startTest = function() {
+      document.getElementById('testStartCard').style.display = 'none';
+      showLoading("Validating Schedule...", "Checking start date and expiry times...");
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          hideLoading();
+          if (res && res.success) {
+            questionsList = res.questions;
+            currentQIndex = 0;
+            userAnswers = {};
+            activeTestType = res.isCoding ? 'Coding' : 'Aptitude';
+            isTestActive = true;
+            pasteEventCount = 0;
+            tabSwitchCount = 0;
+            testStartTime = new Date();
+
+            document.getElementById('activeTestBadge').innerText = res.testLabel;
+            
+            document.getElementById('testContainer').style.display = 'block';
+
+            applyDynamicWatermark();
+            initWebcamProctoring();
+
+            var configuredMins = res.timeoutMins || 60;
+            startExamTimer(configuredMins);
+            renderQuestion();
+            renderQuestionPalette();
+          } else {
+            showBootstrapToast(res ? res.message : "Unable to start assessment.", "warning");
+            document.getElementById('testStartCard').style.display = 'block';
+          }
+        })
+        .getQuestionsData();
+    };
+
+    function showDashboard(roleName) {
+      document.getElementById('facultyDashboard').style.display = 'none';
+      document.getElementById('studentDashboard').style.display = 'none';
+
+      var userName = (currentUserData && currentUserData.name) ? currentUserData.name : roleName;
+      var userEmail = (currentUserData && currentUserData.email) ? currentUserData.email : '';
+      var isDual = currentUserData && currentUserData.isDualRole;
+
+      if (roleName.toLowerCase() === 'faculty') {
+        document.getElementById('facultyNameText').innerText = userName;
+        document.getElementById('facultyEmailBadge').innerText = userEmail;
+        document.getElementById('facultySwitchBtn').style.display = isDual ? 'inline-block' : 'none';
+        document.getElementById('facultyDashboard').style.display = 'block';
+      } else {
+        document.getElementById('studentNameText').innerText = userName;
+        document.getElementById('studentEmailBadge').innerText = userEmail;
+        document.getElementById('studentSwitchBtn').style.display = isDual ? 'inline-block' : 'none';
+        document.getElementById('studentDashboard').style.display = 'block';
+
+        if (currentUserData && currentUserData.hasAttempted) {
+          document.getElementById('alreadyAttemptedCard').style.display = 'block';
+          document.getElementById('testStartCard').style.display = 'none';
+        } else {
+          document.getElementById('alreadyAttemptedCard').style.display = 'none';
+          document.getElementById('testStartCard').style.display = 'block';
+        }
+      }
+    }
+
+    function showLoading(t, s) { 
+      document.getElementById('loadingText').innerText = t; 
+      document.getElementById('loadingSubtext').innerText = s; 
+      document.getElementById('loadingScreen').style.display = 'block'; 
+    }
+
+    function hideLoading() { document.getElementById('loadingScreen').style.display = 'none'; }
+
+    function showError(m) { 
+      document.getElementById('errorMessage').innerText = m; 
+      document.getElementById('unauthorizedPage').style.display = 'block'; 
+    }
+
+    function showBootstrapToast(message, type, redirectOnClose) {
+      type = type || 'info';
+      pendingModalRedirect = redirectOnClose || false;
+
+      var msgModalEl = document.getElementById('appMessageModal');
+      var iconContainer = document.getElementById('msgModalIcon');
+      var titleEl = document.getElementById('msgModalTitle');
+      var bodyEl = document.getElementById('msgModalBody');
+
+      var iconClass = 'fa-info-circle text-info';
+      var titleText = 'Notification';
+
+      if (type === 'error' || type === 'danger') {
+        iconClass = 'fa-circle-exclamation text-danger';
+        titleText = 'Submission Blocked';
+      } else if (type === 'success') {
+        iconClass = 'fa-circle-check text-success';
+        titleText = 'Successfully Completed';
+      } else if (type === 'warning') {
+        iconClass = 'fa-triangle-exclamation text-warning';
+        titleText = 'Assessment Schedule Alert';
+      }
+
+      iconContainer.innerHTML = '<i class="fa-solid ' + iconClass + ' fa-4x"></i>';
+      titleEl.innerText = titleText;
+      bodyEl.innerText = message;
+
+      if (typeof bootstrap !== 'undefined') {
+        var msgModal = bootstrap.Modal.getInstance(msgModalEl) || new bootstrap.Modal(msgModalEl);
+        msgModal.show();
+      }
+    }
+
+    function onMessageModalClose() {
+      if (pendingModalRedirect) {
+        pendingModalRedirect = false;
+        if (currentUserData) currentUserData.hasAttempted = true;
+        showDashboard('Student');
+      }
+    }
+
+    function executeQuestionCreatorAgent() {
+      var topic = document.getElementById('agentTopic').value;
+      var qType = document.getElementById('agentType').value;
+      var count = document.getElementById('agentCount').value || 3;
+
+      if (!topic) {
+        showBootstrapToast("Please enter a topic prompt for the Agent!", "warning");
+        return;
+      }
+
+      showLoading("Agent Operating...", "Generating questions & verifying hidden test cases...");
+      if (typeof bootstrap !== 'undefined') {
+        var modalInstance = bootstrap.Modal.getInstance(document.getElementById('agentCreatorModal'));
+        if (modalInstance) modalInstance.hide();
+      }
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          hideLoading();
+          if (res && res.success) {
+            showBootstrapToast("Agent created and published " + res.count + " questions successfully!", "success");
+          } else {
+            showBootstrapToast("Agent Error: " + (res ? res.message : "Failed to generate"), "danger");
+          }
+        })
+        .runQuestionCreatorAgent(topic, qType, count, "", "", 60);
+    }
+
+    function triggerCodeReviewAgent() {
+      var code = monacoEditorInstance ? monacoEditorInstance.getValue() : '';
+      var q = questionsList[currentQIndex];
+      var lang = document.getElementById('languageSelect').value;
+
+      if (!code || !code.trim()) {
+        showBootstrapToast("Please enter source code to analyze!", "warning");
+        return;
+      }
+
+      showLoading("Code Review Agent Operating...", "Analyzing Big-O complexity & vulnerability risks...");
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          hideLoading();
+          if (res && res.success) {
+            showBootstrapToast(res.review, "info");
+          } else {
+            showBootstrapToast("Review Error: " + res.message, "danger");
+          }
+        })
+        .runCodeReviewAgent(code, q ? q.question : "", lang);
+    }
+
+    function triggerRemedialCoachAgent() {
+      showLoading("Remedial Coach Agent Operating...", "Evaluating score history & constructing learning roadmap...");
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          hideLoading();
+          if (res && res.success) {
+            showBootstrapToast(res.plan, "success");
+          } else {
+            showBootstrapToast("Coach Error: " + res.message, "danger");
+          }
+        })
+        .runRemedialCoachAgent();
+    }
+
+    function processUpload() {
+      var startDateVal = document.getElementById('startDatePicker').value;
+      var startTimeVal = document.getElementById('startTimePicker').value || '08:00';
+
+      var dateVal = document.getElementById('expiryDatePicker').value;
+      var timeVal = document.getElementById('expiryTimePicker').value || '23:59';
+      var timeoutMinsVal = document.getElementById('timeoutMinsPicker').value || 60;
+      
+      if (!dateVal) {
+        showBootstrapToast("Please select an Expiration Date!", "warning");
+        return;
+      }
+
+      var displayStartVal = startDateVal ? (startDateVal + " " + startTimeVal) : "";
+      var displayUntilVal = dateVal + " " + timeVal;
+      var uploaderName = (currentUserData && currentUserData.name) ? currentUserData.name : 'Faculty User';
+      var fileInput = document.getElementById('excelFileInput');
+
+      var parsedQuestions = [];
+
+      if (fileInput.files.length > 0) {
+        var file = fileInput.files[0];
+        var reader = new FileReader();
+
+        reader.onload = function(e) {
+          try {
+            var data = new Uint8Array(e.target.result);
+            var workbook = XLSX.read(data, { type: 'array' });
+            var firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            var rawRows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+            var startRow = 0;
+            if (rawRows.length > 0 && String(rawRows[0][0]).toLowerCase().indexOf('question') !== -1) {
+              startRow = 1;
+            }
+
+            for (var i = startRow; i < rawRows.length; i++) {
+              var row = rawRows[i];
+              if (row && row[0]) {
+                var rawType = String(row[1] || "").trim().toUpperCase();
+                var isCompiler = (rawType === "COMPILER") || (!row[2] && !row[3]);
+
+                parsedQuestions.push({
+                  question: row[0],
+                  type: isCompiler ? "COMPILER" : "MCQ",
+                  optionA: isCompiler ? '' : (row[2] || ''),
+                  optionB: isCompiler ? '' : (row[3] || ''),
+                  optionC: isCompiler ? '' : (row[4] || ''),
+                  optionD: isCompiler ? '' : (row[5] || ''),
+                  sampleInput: isCompiler ? (row[2] || '') : '',
+                  sampleOutput: isCompiler ? (row[3] || '') : '',
+                  answer: row[6] || '',
+                  marks: row[7] || 1,
+                  hiddenTestCases: isCompiler ? (row[6] || '') : '',
+                  uploadedBy: uploaderName
+                });
+              }
+            }
+
+            executeUploadServerCall(parsedQuestions, displayStartVal, displayUntilVal, timeoutMinsVal);
+          } catch (err) {
+            showBootstrapToast("Error parsing Excel: " + err.message, "danger");
+          }
+        };
+
+        reader.readAsArrayBuffer(file);
+      } else { 
+        var q = document.getElementById('mQ').value;
+        if (!q) { showBootstrapToast("Please upload an Excel file or type a question.", "warning"); return; }
+        
+        var mType = document.getElementById('mType').value;
+        parsedQuestions.push({
+          question: q,
+          type: mType,
+          optionA: mType === "MCQ" ? document.getElementById('mA').value : '',
+          optionB: mType === "MCQ" ? document.getElementById('mB').value : '',
+          optionC: mType === "MCQ" ? document.getElementById('mC').value : '',
+          optionD: mType === "MCQ" ? document.getElementById('mD').value : '',
+          sampleInput: mType === "COMPILER" ? document.getElementById('mA').value : '',
+          sampleOutput: mType === "COMPILER" ? document.getElementById('mB').value : '',
+          answer: document.getElementById('mAns').value,
+          marks: document.getElementById('mMarks').value || 1,
+          hiddenTestCases: mType === "COMPILER" ? document.getElementById('mAns').value : '',
+          uploadedBy: uploaderName
+        });
+        executeUploadServerCall(parsedQuestions, displayStartVal, displayUntilVal, timeoutMinsVal);
+      }
+    }
+
+    function executeUploadServerCall(questionsArray, displayStartVal, displayUntilVal, timeoutMinsVal) {
+      showLoading("Uploading Questions...", "Writing data to Google Sheets...");
+      if (typeof bootstrap !== 'undefined') {
+        var modalInstance = bootstrap.Modal.getInstance(document.getElementById('uploadModal'));
+        if (modalInstance) modalInstance.hide();
+      }
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          hideLoading();
+          if (res && res.success) {
+            showBootstrapToast("Published " + res.count + " questions successfully into " + res.targetSheet, "success");
+          } else {
+            showBootstrapToast("Upload Error: " + (res ? res.message : "Unknown error"), "danger");
+          }
+        })
+        .uploadQuestionsBatch(selectedUploadType, questionsArray, displayStartVal, displayUntilVal, timeoutMinsVal);
+    }
+
+    function startExamTimer(durationMins) {
+      totalExamSeconds = (durationMins || 60) * 60;
+      clearInterval(examTimerInterval);
+      
+      examTimerInterval = setInterval(function() {
+        if (totalExamSeconds <= 0) {
+          clearInterval(examTimerInterval);
+          showBootstrapToast("Assessment Timeout! Time has expired. Submitting your test automatically...", "warning");
+          confirmAndExecuteSubmit(true);
+          return;
+        }
+
+        totalExamSeconds--;
+        var mins = Math.floor(totalExamSeconds / 60);
+        var secs = totalExamSeconds % 60;
+        document.getElementById('examTimerDisplay').innerText = 
+          (mins < 10 ? "0" : "") + mins + ":" + (secs < 10 ? "0" : "") + secs;
+      }, 1000);
+    }
+
+    function renderQuestion() {
+      var q = questionsList[currentQIndex];
+      var total = questionsList.length;
+      document.getElementById('questionProgressText').innerText = "Question " + (currentQIndex + 1) + " of " + total;
+      document.getElementById('questionText').innerText = (currentQIndex + 1) + ". " + q.question;
+
+      var aptitudeContainer = document.getElementById('aptitudeModeContainer');
+      var codingContainer = document.getElementById('codingModeContainer');
+      var optionsContainer = document.getElementById('optionsContainer');
+
+      if (q.type === 'MCQ') {
+        aptitudeContainer.classList.remove('d-none');
+        aptitudeContainer.classList.add('d-flex');
+        codingContainer.style.display = 'none';
+
+        optionsContainer.innerHTML = '';
+        ['A', 'B', 'C', 'D'].forEach(function(lbl, idx) {
+          var opt = q.options[idx];
+          if (!opt) return;
+          var checked = userAnswers[q.id] === opt ? 'checked' : '';
+          optionsContainer.innerHTML += 
+            '<label class="option-card" onclick="selectOption(\'' + q.id + '\', \'' + opt + '\')">' +
+              '<input type="radio" name="opt_' + q.id + '" ' + checked + '>' +
+              '<div><strong>' + lbl + '.</strong> ' + opt + '</div>' +
+            '</label>';
+        });
+      } else {
+        aptitudeContainer.classList.remove('d-flex');
+        aptitudeContainer.classList.add('d-none');
+        optionsContainer.innerHTML = '';
+
+        codingContainer.style.display = 'block';
+
+        var sampleInContainer = document.getElementById('sampleInputContainer');
+        var sampleInBox = document.getElementById('sampleInputBox');
+        if (q.sampleInput && q.sampleInput.trim() !== '') {
+          sampleInContainer.style.display = 'block';
+          sampleInBox.innerText = q.sampleInput;
+        } else {
+          sampleInContainer.style.display = 'none';
+        }
+
+        var sampleOutContainer = document.getElementById('sampleOutputContainer');
+        var sampleOutBox = document.getElementById('sampleOutputBox');
+        if (q.sampleOutput && q.sampleOutput.trim() !== '') {
+          sampleOutContainer.style.display = 'block';
+          sampleOutBox.innerText = q.sampleOutput;
+        } else {
+          sampleOutContainer.style.display = 'none';
+        }
+
+        initMonacoEditor();
+        var savedCode = userAnswers[q.id] || codeTemplates[document.getElementById('languageSelect').value];
+        if (monacoEditorInstance) {
+          monacoEditorInstance.setValue(savedCode);
+        }
+      }
+
+      document.getElementById('prevBtn').disabled = currentQIndex === 0;
+      document.getElementById('nextBtn').style.display = (currentQIndex === total - 1) ? 'none' : 'inline-block';
+    }
+
+    function selectOption(qId, val) {
+      userAnswers[qId] = val;
+      renderQuestionPalette();
+    }
+
+    function renderQuestionPalette() {
+      var grid = document.getElementById('questionPaletteGrid');
+      grid.innerHTML = '';
+
+      questionsList.forEach(function(q, idx) {
+        var isAnswered = userAnswers[q.id] !== undefined && String(userAnswers[q.id]).trim() !== '';
+        var isCurrent = idx === currentQIndex;
+
+        var btnClass = 'palette-unanswered';
+        if (isAnswered) btnClass = 'palette-answered';
+        if (isCurrent) btnClass = 'palette-current';
+
+        grid.innerHTML += 
+          '<button class="btn palette-btn ' + btnClass + '" onclick="jumpToQuestion(' + idx + ')">' +
+            (idx + 1) +
+          '</button>';
+      });
+    }
+
+    function jumpToQuestion(index) {
+      saveCurrentCodeState();
+      currentQIndex = index;
+      renderQuestion();
+      renderQuestionPalette();
+    }
+
+    function nextQuestion() {
+      saveCurrentCodeState();
+      currentQIndex++;
+      renderQuestion();
+      renderQuestionPalette();
+    }
+
+    function prevQuestion() {
+      saveCurrentCodeState();
+      currentQIndex--;
+      renderQuestion();
+      renderQuestionPalette();
+    }
+
+    function saveCurrentCodeState() {
+      var q = questionsList[currentQIndex];
+      if (q && q.type === 'COMPILER' && monacoEditorInstance) {
+        userAnswers[q.id] = monacoEditorInstance.getValue();
+      }
+    }
+
+    function attemptFinalSubmit(isTimerExpired) {
+      saveCurrentCodeState();
+
+      if (!isTimerExpired) {
+        var unansweredList = [];
+        questionsList.forEach(function(q, index) {
+          var ans = userAnswers[q.id];
+          if (!ans || String(ans).trim() === '') {
+            unansweredList.push(index + 1);
+          }
+        });
+
+        if (unansweredList.length > 0) {
+          showBootstrapToast("Submission Blocked: You must answer all questions before submitting! Unanswered question(s): Q" + unansweredList.join(', Q'), "danger");
+          return;
+        }
+
+        var confirmTextEl = document.getElementById('submitConfirmText');
+        confirmTextEl.innerText = "All questions have been answered. Are you sure you want to submit your test?";
+
+        if (typeof bootstrap !== 'undefined') {
+          new bootstrap.Modal(document.getElementById('submitConfirmModal')).show();
+        }
+      } else {
+        confirmAndExecuteSubmit(true);
+      }
+    }
+
+    function confirmAndExecuteSubmit(isTimerExpired) {
+      clearInterval(examTimerInterval);
+      if (proctorInterval) clearInterval(proctorInterval);
+
+      const video = document.getElementById('webcamFeed');
+      if (video && video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+      }
+
+      if (typeof bootstrap !== 'undefined') {
+        var modalEl = document.getElementById('submitConfirmModal');
+        var modalInstance = bootstrap.Modal.getInstance(modalEl);
+        if (modalInstance) modalInstance.hide();
+      }
+
+      document.getElementById('testContainer').style.display = 'none';
+      showLoading("Auditing & Submitting...", "Running Proctoring Security Agent...");
+      isTestActive = false;
+
+      var durationSec = testStartTime ? Math.floor((new Date() - testStartTime) / 1000) : 0;
+
+      google.script.run
+        .withSuccessHandler(function(auditRes) {
+          google.script.run
+            .withSuccessHandler(function(res) {
+              hideLoading();
+              if (res && res.success) {
+                showBootstrapToast("Successfully Completed", "success", true);
+              } else {
+                showBootstrapToast("Error: " + (res ? res.message : "Submission failed"), "danger");
+              }
+            })
+            .submitTestAnswers(userAnswers, isTimerExpired || false);
+        })
+        .runProctoringAgent(pasteEventCount, tabSwitchCount, durationSec);
+    }
+
+    function initMonacoEditor() {
+      if (!monacoEditorInstance && typeof require !== 'undefined') {
+        require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' } });
+        require(['vs/editor/editor.main'], function () {
+          monacoEditorInstance = monaco.editor.create(document.getElementById('monaco-container'), {
+            value: codeTemplates.python,
+            language: 'python',
+            theme: 'vs-dark',
+            automaticLayout: true,
+            fontSize: 14,
+            minimap: { enabled: false }
+          });
+          
+          monacoEditorInstance.onDidChangeModelContent(function() {
+            var currentQ = questionsList[currentQIndex];
+            if (currentQ) {
+              userAnswers[currentQ.id] = monacoEditorInstance.getValue();
+              renderQuestionPalette();
+            }
+          });
+        });
+      }
+    }
+
+    function changeLanguage() {
+      var lang = document.getElementById('languageSelect').value;
+      if (monacoEditorInstance) {
+        monaco.editor.setModelLanguage(monacoEditorInstance.getModel(), lang === 'cpp' ? 'cpp' : lang);
+        monacoEditorInstance.setValue(codeTemplates[lang] || '');
+      }
+    }
+
+    function runCodeAgainstPiston() {
+      var consoleEl = document.getElementById('consoleOutput');
+      var selectedLangKey = document.getElementById('languageSelect').value;
+      var code = monacoEditorInstance ? monacoEditorInstance.getValue() : '';
+      var languageId = judge0LangMap[selectedLangKey];
+
+      if (!code.trim()) { consoleEl.innerText = "Error: Editor is empty!"; return; }
+
+      consoleEl.innerText = "Compiling and executing code...";
+      fetch('https://ce.judge0.com/submissions?wait=true', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_code: code, language_id: languageId, stdin: "" })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        consoleEl.innerText = data.stdout || data.stderr || data.compile_output || "Executed with no output.";
+      })
+      .catch(function(err) { consoleEl.innerText = "Execution API Error: " + err.message; });
+    }
+
+    function toggleChatWindow() {
+      var win = document.getElementById('chatbotWindow');
+      win.style.display = (win.style.display === 'flex') ? 'none' : 'flex';
+    }
+
+    function sendChatMessage() {
+      var inputEl = document.getElementById('chatInput');
+      var prompt = inputEl.value.trim();
+      if (!prompt) return;
+
+      var chatBody = document.getElementById('chatBody');
+
+      chatBody.innerHTML += '<div class="chat-msg msg-user">' + escapeHtml(prompt) + '</div>';
+      inputEl.value = '';
+      chatBody.scrollTop = chatBody.scrollHeight;
+
+      var loadingId = 'loading_' + Date.now();
+      chatBody.innerHTML += '<div id="' + loadingId + '" class="chat-msg msg-bot text-info"><i class="fa-solid fa-circle-notch fa-spin me-2"></i>Thinking...</div>';
+      chatBody.scrollTop = chatBody.scrollHeight;
+
+      var currentQContext = "";
+      if (typeof questionsList !== 'undefined' && questionsList[currentQIndex]) {
+        currentQContext = questionsList[currentQIndex].question;
+      }
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          var loader = document.getElementById(loadingId);
+          if (loader) loader.remove();
+
+          if (res && res.success) {
+            chatBody.innerHTML += '<div class="chat-msg msg-bot">' + escapeHtml(res.reply) + '</div>';
+          } else {
+            chatBody.innerHTML += '<div class="chat-msg msg-bot text-danger">Error: ' + escapeHtml(res ? res.message : "Failed to generate reply") + '</div>';
+          }
+          chatBody.scrollTop = chatBody.scrollHeight;
+        })
+        .withFailureHandler(function(err) {
+          var loader = document.getElementById(loadingId);
+          if (loader) loader.remove();
+          chatBody.innerHTML += '<div class="chat-msg msg-bot text-danger">Server Error: ' + escapeHtml(err.toString()) + '</div>';
+          chatBody.scrollTop = chatBody.scrollHeight;
+        })
+        .callGroqChatbot(prompt, isTestActive || false, currentQContext);
+    }
+
+    function escapeHtml(text) {
+      return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    }
+
+    // Security Controls
+    document.addEventListener('visibilitychange', function() {
+      if (isTestActive && document.hidden) {
+        tabSwitchCount++;
+        showBootstrapToast('Proctor Warning: Tab switching is monitored (' + tabSwitchCount + ')!', 'warning');
+      }
+    });
+
+    document.addEventListener('contextmenu', function(e) { 
+      if (isTestActive) { e.preventDefault(); showBootstrapToast('Right-clicking is disabled during assessment.', 'warning'); } 
+    });
+    document.addEventListener('copy', function(e) { 
+      if (isTestActive) { e.preventDefault(); showBootstrapToast('Copying content is disabled!', 'warning'); } 
+    });
+    document.addEventListener('paste', function(e) { 
+      if (isTestActive) { 
+        pasteEventCount++;
+        showBootstrapToast('Pasting content is monitored by Security Agent!', 'warning'); 
+      } 
+    });
+  </script>
+</body>
+</html>

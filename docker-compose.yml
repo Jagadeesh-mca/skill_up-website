@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL Database with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: skillup_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: skillup_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 2. Next.js Full-Stack Application
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: skillup_web_app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "postgresql://postgres:password123@postgres:5432/skillup_db?schema=public"
+      NEXTAUTH_URL: "http://localhost:3000"
+      NEXTAUTH_SECRET: "skillup-hindustan-univ-super-secret-key-2026"
+      NODE_ENV: "production"
+      ENABLE_DEV_LOGIN: "true"
+      AI_PROVIDER: "mock"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - uploads_data:/app/public/uploads
+
+volumes:
+  postgres_data:
+  uploads_data:
